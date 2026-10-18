@@ -5,7 +5,7 @@
 
 地図上で指定した2地点（A-B間）の経度・緯度座標を取得・確認し、クリップボードへ簡単にエクスポートできるデスクトップアプリケーションです。国内主要サーキットのプリセットジャンプ機能や、座標対の順序管理機能を備えています。
 
-本アプリは、**[DS Universal Suite](https://github.com/oud0n/ds_universal)** の「コース編集/コース・計測ライン編集」や「コースフォルダー一括設置」機能でセクター位置情報として取り込み可能な、デジスパイス用セクターファイル（`.sci`）への記述内容を出力・表示する目的で開発しました。
+本アプリは、作者:oud0n様が公開している **[DS Universal Suite](https://github.com/oud0n/ds_universal)** の「コース編集/コース・計測ライン編集」や「コースフォルダー一括設置」機能でセクター位置情報として取り込み可能な、デジスパイス用セクターファイル（`.sci`）への記述内容を出力・表示する目的で開発しました。
 
 - 出力されたテキストをコピー＆ペーストして `.sci` ファイルに追記することで、そのまま利用可能です。
 - DS Universal Suite だけでなく、おそらくデジスパイス本体でもそのままお使いいただけます。
@@ -36,20 +36,27 @@
 
 ```bash
 # リポジトリのクローン
-git clone [https://github.com/bpfj3ndcbr/map-coordinate-picker.git](https://github.com/bpfj3ndcbr/map-coordinate-picker.git)
+git clone https://github.com/bpfj3ndcbr/map-coordinate-picker.git
 cd map-coordinate-picker
 
 # 依存パッケージのインストール
 npm install
 
-# Vite 開発サーバーの起動
+# 起動方法その1 / プラウザで簡易的に確認
+
+1. Vite 開発サーバーの起動
 npm run dev
 
-# Electron 開発モードでの起動
+2. ブラウザで Vite 開発サーバ起動で出力された URL を開く
+
+# 起動方法その2 / 簡易的にアプリとして確認
+1. Electron 開発モードでの起動
 ターミナルで
 npm run dev
-した後、別のターミナルで
+
+2. 別のターミナルで
 npm run electron:dev
+
 ```
 
 ### アプリケーションのビルド
@@ -58,21 +65,19 @@ npm run electron:dev
 # TypeScript コンパイルおよび Web 成果物のビルド
 npm run build
 
-# macOS (Apple Silicon arm64) 用配布パッケージの生成 (.dmg)
+# macOS (Apple Silicon arm64) 用アプリの生成 (.app)
 npm run dist:mac
+
+release/mac-arm64/ フォルダに「Map Coordinate Picker.app」が作成される
 
 # Windows 用配布パッケージの生成 (.exe)
 npm run dist:win
 
-(windows環境では未検証)
+(windows環境は未検証)
+
 
 ```
 
----
-
-## 🤝 コントリビュート (Contributing)
-
-本プロジェクトへのプルリクエスト、バグ報告、新機能のご提案などのコントリビュートを歓迎します！
 
 ---
 
