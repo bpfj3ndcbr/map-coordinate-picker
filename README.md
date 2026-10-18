@@ -92,3 +92,5 @@ npm run dist:win
 - **Leaflet**: © Vladimir Agafonkin, BSD-2-Clause License
 - **Electron**: © OpenJS Foundation, MIT License
 - **Vite**: © Evan You & Vite Contributors, MIT License
+
+各ライブラリのライセンス詳細および著作権表記については、同梱の THIRD-PARTY-NOTICES.txt をご参照ください。
