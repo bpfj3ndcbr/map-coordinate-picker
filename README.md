@@ -36,7 +36,7 @@
 
 ```bash
 # リポジトリのクローン
-git clone [https://github.com/your-username/map-coordinate-picker.git](https://github.com/your-username/map-coordinate-picker.git)
+git clone [https://github.com/bpfj3ndcbr/map-coordinate-picker.git](https://github.com/bpfj3ndcbr/map-coordinate-picker.git)
 cd map-coordinate-picker
 
 # 依存パッケージのインストール
