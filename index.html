@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map Coordinate Picker v1.0.0</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #map {
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* UIパネル: 横幅380px、非ホバー時は不透明度0.7 */
+    #ui-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 380px;
+      max-height: 90vh;
+      overflow-y: auto;
+      opacity: 0.7;
+      transition: opacity 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    #ui-panel:hover {
+      opacity: 1.0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+    }
+
+    .status {
+      font-size: 0.85rem;
+      color: #555;
+      font-weight: bold;
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      padding: 6px;
+      box-sizing: border-box;
+      font-size: 0.85rem;
+      font-family: monospace;
+      resize: vertical;
+    }
+    .search-container {
+      display: flex;
+      gap: 6px;
+    }
+    .search-container input[type="text"],
+    .search-container select {
+      flex: 1;
+      padding: 6px;
+      font-size: 0.85rem;
+      min-width: 0;
+    }
+    .search-container button {
+      flex: initial;
+      padding: 6px 12px;
+      white-space: nowrap;
+    }
+    .zoom-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: #333;
+    }
+    .zoom-container input[type="range"] {
+      flex: 1;
+      cursor: pointer;
+    }
+    .zoom-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border-radius: 4px;
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      cursor: pointer;
+      flex: none;
+    }
+    .zoom-btn:hover {
+      background-color: #545b62;
+    }
+    .button-group {
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      flex: 1;
+      padding: 6px 12px;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      background-color: #007bff;
+      color: white;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    button.reset {
+      background-color: #6c757d;
+    }
+    button.reset:hover {
+      background-color: #545b62;
+    }
+
+    #pair-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 6px;
+      background: #fafafa;
+    }
+    .pair-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #fff;
+      padding: 6px 8px;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    .pair-item:hover {
+      background-color: #e8f4f8;
+      border-color: #b3d7e8;
+    }
+    .pair-item .pair-title {
+      font-weight: bold;
+      color: #1d3557;
+    }
+    .pair-item .pair-actions {
+      display: flex;
+      gap: 2px;
+    }
+    .pair-item button {
+      padding: 2px 6px;
+      font-size: 0.75rem;
+      background-color: #e9ecef;
+      color: #333;
+      border: 1px solid #ccc;
+    }
+    .pair-item button:hover {
+      background-color: #ced4da;
+    }
+    .pair-item button.btn-del {
+      background-color: #ff4d4f;
+      color: white;
+      border: none;
+    }
+    .pair-item button.btn-del:hover {
+      background-color: #d9363e;
+    }
+
+    .plus-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #e63946;
+      line-height: 1;
+      user-select: none;
+      cursor: move;
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+    }
+
+    .callout-label {
+      overflow: visible !important;
+      pointer-events: none;
+    }
+
+    .segment-number-label {
+      background: #1d3557;
+      color: #ffffff;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      box-sizing: border-box;
+      
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 15px;
+      font-weight: bold;
+      line-height: 1;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+      pointer-events: none;
+    }
+
+    .segment-number-label span {
+      display: inline-block;
+      line-height: 1;
+      margin: 0;
+      padding: 0;
+      transform: translate(-0.2px, -0.5px);
+    }
+
+    .action-popup-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 6px;
+      border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .action-popup-btn {
+      padding: 5px 10px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      color: white;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .btn-confirm { background-color: #28a745; }
+    .btn-confirm:hover { background-color: #218838; }
+    .btn-next { background-color: #007bff; }
+    .btn-next:hover { background-color: #0069d9; }
+    .btn-cancel { background-color: #dc3545; }
+    .btn-cancel:hover { background-color: #c82333; }
+  </style>
+</head>
+<body>
+
+  <div id="ui-panel">
+    <!-- 検索エリア -->
+    <div class="search-container">
+      <input type="text" id="search-input" placeholder="住所や施設名を検索 (例: 小倉駅)">
+      <button id="search-btn">検索</button>
+    </div>
+
+    <!-- サーキット選択エリア -->
+    <div class="search-container">
+      <select id="circuit-select">
+        <option value="">-- 国内主要サーキットを選択 --</option>
+        <option value="fsw">富士スピードウェイ（FSW）</option>
+        <option value="suzuka">鈴鹿サーキット（Suzuka Circuit）</option>
+        <option value="tc2000">筑波サーキット コース2000（TC2000）</option>
+        <option value="tc1000">筑波サーキット コース1000（TC1000）</option>
+        <option value="nikko">日光サーキット（Nikko Circuit）</option>
+        <option value="motegi">モビリティリゾートもてぎ（Motegi Road Course）</option>
+        <option value="sugo">スポーツランドSUGO（Sportsland SUGO）</option>
+        <option value="autopolis">オートポリス（Autopolis）</option>
+        <option value="okayama">岡山国際サーキット（Okayama International）</option>
+        <option value="sodegaura">袖ヶ浦フォレストレースウェイ（Sodegaura）</option>
+        <option value="honjo">本庄サーキット（Honjo Circuit）</option>
+        <option value="ebisu_east">エビスサーキット東コース（Ebisu East）</option>
+        <option value="meihan">名阪スポーツランド（Meihan Sportsland）</option>
+      </select>
+      <button id="circuit-btn">選択する</button>
+    </div>
+
+    <div id="status" class="status">地点 A をクリックしてください</div>
+
+    <!-- 確定済みペア一覧 -->
+    <div id="pair-list-container" style="display: none;">
+      <div style="font-size: 0.8rem; color: #666; margin-bottom: 2px;">確定済みペア一覧:</div>
+      <div id="pair-list"></div>
+    </div>
+
+    <!-- 座標出力エリア -->
+    <textarea id="result-input" readonly placeholder="A緯度,A経度,B緯度,B経度,1"></textarea>
+    
+    <!-- ズーム操作 -->
+    <div class="zoom-container">
+      <button id="zoom-out-btn" class="zoom-btn" title="縮小">-</button>
+      <input type="range" id="zoom-slider" min="2" max="18" step="1" value="14">
+      <button id="zoom-in-btn" class="zoom-btn" title="拡大">+</button>
+      <span id="zoom-value" style="min-width: 45px; text-align: right; color: #666;">(Lv.14)</span>
+    </div>
+
+    <div class="button-group">
+      <button id="copy-btn">コピー</button>
+      <button id="reset-btn" class="reset">すべてリセット</button>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
