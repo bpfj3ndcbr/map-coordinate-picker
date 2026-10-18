@@ -214,30 +214,23 @@ function updateActionPopupPosition(): void {
   const vy = pB.y - pA.y;
   const deg = Math.atan2(vy, vx) * (180 / Math.PI);
 
-  // 【簡易計算】ラベル最遠点（約45px）＋余白＋しっぽを確実に避けるため、80pxを設定
   const offset = 80; 
   let tailClass = '';
   let anchorPoint: [number, number] = [0, 0];
 
-  // CSSで定義した正確なサイズ
   const uiWidth = 140;
   const uiHeight = 126;
 
-  // 角度に応じてB点の「外側」に配置し、しっぽをB点側に向ける
   if (deg >= -45 && deg < 45) {
-    // 右へ逃がす（しっぽは左向き）
     tailClass = 'tail-left';
     anchorPoint = [-offset, uiHeight / 2];
   } else if (deg >= 45 && deg < 135) {
-    // 下へ逃がす（しっぽは上向き）
     tailClass = 'tail-top';
     anchorPoint = [uiWidth / 2, -offset];
   } else if (deg >= -135 && deg < -45) {
-    // 上へ逃がす（しっぽは下向き）
     tailClass = 'tail-bottom';
     anchorPoint = [uiWidth / 2, uiHeight + offset];
   } else {
-    // 左へ逃がす（しっぽは右向き）
     tailClass = 'tail-right';
     anchorPoint = [uiWidth + offset, uiHeight / 2];
   }
@@ -245,20 +238,32 @@ function updateActionPopupPosition(): void {
   const container = document.createElement('div');
   container.className = `custom-action-popup ${tailClass}`;
   
+  // ★追加：ポップアップのコンテナをクリックした際、地図にイベントが伝播しないようにする
+  L.DomEvent.disableClickPropagation(container);
+  
   const btnConfirm = document.createElement('button');
   btnConfirm.className = 'action-popup-btn btn-confirm';
   btnConfirm.textContent = '確定';
-  btnConfirm.onclick = () => finalizeCurrentPair(false);
+  btnConfirm.onclick = (e: MouseEvent) => {
+    e.stopPropagation(); // ★追加：ボタンクリックイベントの伝播も確実に防止
+    finalizeCurrentPair(false);
+  };
 
   const btnNext = document.createElement('button');
   btnNext.className = 'action-popup-btn btn-next';
   btnNext.textContent = '確定して次へ';
-  btnNext.onclick = () => finalizeCurrentPair(true);
+  btnNext.onclick = (e: MouseEvent) => {
+    e.stopPropagation(); // ★追加
+    finalizeCurrentPair(true);
+  };
 
   const btnCancel = document.createElement('button');
   btnCancel.className = 'action-popup-btn btn-cancel';
   btnCancel.textContent = '取り消し';
-  btnCancel.onclick = () => cancelCurrentPair();
+  btnCancel.onclick = (e: MouseEvent) => {
+    e.stopPropagation(); // ★追加
+    cancelCurrentPair();
+  };
 
   container.appendChild(btnConfirm);
   container.appendChild(btnNext);
