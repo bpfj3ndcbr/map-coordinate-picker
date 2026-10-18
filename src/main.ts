@@ -4,6 +4,56 @@ import { initMap, plusIcon, getLabelOffsetVector, createCalloutIcon, getSegmentN
 import { getCircledNumber, updateClipboardText, renderPairList } from './ui';
 
 // ---------------------------------------------------------------------------
+// 動的ポップアップ用のカスタムCSSを注入
+// ---------------------------------------------------------------------------
+const popupStyle = document.createElement('style');
+popupStyle.innerHTML = `
+  .custom-action-popup {
+    position: relative;
+    background: white;
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+    width: 140px;
+    height: 126px;
+    box-sizing: border-box;
+    pointer-events: auto;
+  }
+  .custom-action-popup button {
+    flex: 1;
+    cursor: pointer;
+  }
+  .custom-action-popup::after {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-style: solid;
+  }
+  /* しっぽの方向バリエーション（12pxの長さ） */
+  .custom-action-popup.tail-left::after {
+    top: 50%; left: -12px; transform: translateY(-50%);
+    border-width: 12px 12px 12px 0; border-color: transparent white transparent transparent;
+  }
+  .custom-action-popup.tail-right::after {
+    top: 50%; right: -12px; transform: translateY(-50%);
+    border-width: 12px 0 12px 12px; border-color: transparent transparent transparent white;
+  }
+  .custom-action-popup.tail-top::after {
+    top: -12px; left: 50%; transform: translateX(-50%);
+    border-width: 0 12px 12px 12px; border-color: transparent transparent white transparent;
+  }
+  .custom-action-popup.tail-bottom::after {
+    bottom: -12px; left: 50%; transform: translateX(-50%);
+    border-width: 12px 12px 0 12px; border-color: white transparent transparent transparent;
+  }
+`;
+document.head.appendChild(popupStyle);
+
+// ---------------------------------------------------------------------------
 // 国内主要サーキットの座標マスターデータ
 // ---------------------------------------------------------------------------
 const CIRCUITS: Record<string, { name: string; lat: number; lng: number }> = {
@@ -36,14 +86,13 @@ let currentMarkerB: L.Marker | null = null;
 let currentLineAB: L.Polyline | null = null;
 let currentLabelMarkerA: L.Marker | null = null;
 let currentLabelMarkerB: L.Marker | null = null;
-let actionPopup: L.Popup | null = null;
+let actionPopupMarker: L.Marker | null = null;
 
 // ---------------------------------------------------------------------------
 // 初期化・DOM要素取得
 // ---------------------------------------------------------------------------
 const map = initMap('map');
 
-// アプリ初回読み込み時の地図描画サイズ調整
 setTimeout(() => {
   map.invalidateSize();
 }, 200);
@@ -153,46 +202,97 @@ function deletePair(index: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// アクションポップアップ制御
+// カスタムアクションポップアップ生成
 // ---------------------------------------------------------------------------
-function showActionPopup(latLng: L.LatLng): void {
-  removeActionPopup();
+function updateActionPopupPosition(): void {
+  if (!actionPopupMarker || !currentPointA || !currentPointB) return;
 
-  const popupContent = document.createElement('div');
-  popupContent.className = 'action-popup-container';
+  const pA = map.latLngToContainerPoint([currentPointA.lat, currentPointA.lng]);
+  const pB = map.latLngToContainerPoint([currentPointB.lat, currentPointB.lng]);
 
+  const vx = pB.x - pA.x;
+  const vy = pB.y - pA.y;
+  const deg = Math.atan2(vy, vx) * (180 / Math.PI);
+
+  // 【簡易計算】ラベル最遠点（約45px）＋余白＋しっぽを確実に避けるため、80pxを設定
+  const offset = 80; 
+  let tailClass = '';
+  let anchorPoint: [number, number] = [0, 0];
+
+  // CSSで定義した正確なサイズ
+  const uiWidth = 140;
+  const uiHeight = 126;
+
+  // 角度に応じてB点の「外側」に配置し、しっぽをB点側に向ける
+  if (deg >= -45 && deg < 45) {
+    // 右へ逃がす（しっぽは左向き）
+    tailClass = 'tail-left';
+    anchorPoint = [-offset, uiHeight / 2];
+  } else if (deg >= 45 && deg < 135) {
+    // 下へ逃がす（しっぽは上向き）
+    tailClass = 'tail-top';
+    anchorPoint = [uiWidth / 2, -offset];
+  } else if (deg >= -135 && deg < -45) {
+    // 上へ逃がす（しっぽは下向き）
+    tailClass = 'tail-bottom';
+    anchorPoint = [uiWidth / 2, uiHeight + offset];
+  } else {
+    // 左へ逃がす（しっぽは右向き）
+    tailClass = 'tail-right';
+    anchorPoint = [uiWidth + offset, uiHeight / 2];
+  }
+
+  const container = document.createElement('div');
+  container.className = `custom-action-popup ${tailClass}`;
+  
   const btnConfirm = document.createElement('button');
   btnConfirm.className = 'action-popup-btn btn-confirm';
   btnConfirm.textContent = '確定';
-  btnConfirm.addEventListener('click', () => finalizeCurrentPair(false));
+  btnConfirm.onclick = () => finalizeCurrentPair(false);
 
   const btnNext = document.createElement('button');
   btnNext.className = 'action-popup-btn btn-next';
   btnNext.textContent = '確定して次へ';
-  btnNext.addEventListener('click', () => finalizeCurrentPair(true));
+  btnNext.onclick = () => finalizeCurrentPair(true);
 
   const btnCancel = document.createElement('button');
   btnCancel.className = 'action-popup-btn btn-cancel';
   btnCancel.textContent = '取り消し';
-  btnCancel.addEventListener('click', cancelCurrentPair);
+  btnCancel.onclick = () => cancelCurrentPair();
 
-  popupContent.appendChild(btnConfirm);
-  popupContent.appendChild(btnNext);
-  popupContent.appendChild(btnCancel);
+  container.appendChild(btnConfirm);
+  container.appendChild(btnNext);
+  container.appendChild(btnCancel);
 
-  actionPopup = L.popup({ closeButton: false, autoClose: false, closeOnClick: false, offset: [20, -10] })
-    .setLatLng(latLng)
-    .setContent(popupContent)
-    .openOn(map);
+  const customIcon = L.divIcon({
+    html: container,
+    className: '', // デフォルト背景を消去
+    iconSize: [uiWidth, uiHeight],
+    iconAnchor: anchorPoint
+  });
+
+  actionPopupMarker.setLatLng([currentPointB.lat, currentPointB.lng]);
+  actionPopupMarker.setIcon(customIcon);
+}
+
+function showActionPopup(): void {
+  if (!currentPointA || !currentPointB) return;
+  removeActionPopup();
+
+  actionPopupMarker = L.marker([currentPointB.lat, currentPointB.lng], { interactive: true }).addTo(map);
+  updateActionPopupPosition();
 }
 
 function removeActionPopup(): void {
-  if (actionPopup) {
-    map.closePopup(actionPopup);
-    actionPopup = null;
+  if (actionPopupMarker) {
+    map.removeLayer(actionPopupMarker);
+    actionPopupMarker = null;
   }
 }
 
+// ---------------------------------------------------------------------------
+// 確定・キャンセル処理
+// ---------------------------------------------------------------------------
 function finalizeCurrentPair(continueNext: boolean): void {
   if (!currentPointA || !currentPointB || !currentMarkerA || !currentMarkerB || !currentLineAB || !currentLabelMarkerA || !currentLabelMarkerB) return;
 
@@ -246,11 +346,16 @@ function createDraggableMarker(coord: PointCoord, isPointA: boolean): L.Marker {
   const m = L.marker([coord.lat, coord.lng], { icon: plusIcon, draggable: true }).addTo(map);
   m.on('drag', (e: L.LeafletEvent) => {
     const newPos = (e.target as L.Marker).getLatLng();
-    if (isPointA) currentPointA = { lat: newPos.lat, lng: newPos.lng };
-    else {
+    if (isPointA) {
+      currentPointA = { lat: newPos.lat, lng: newPos.lng };
+    } else {
       currentPointB = { lat: newPos.lat, lng: newPos.lng };
-      if (actionPopup) actionPopup.setLatLng(newPos);
     }
+
+    if (actionPopupMarker && currentPointA && currentPointB) {
+      updateActionPopupPosition();
+    }
+
     updateCurrentPairDrawings();
   });
   return m;
@@ -303,7 +408,6 @@ searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
   }
 });
 
-// サーキット選択ボタン処理
 circuitBtn.addEventListener('click', () => {
   const key = circuitSelect.value;
   if (!key || !CIRCUITS[key]) {
@@ -333,7 +437,7 @@ map.on('click', (e: L.LeafletMouseEvent) => {
     currentMarkerB = createDraggableMarker(currentPointB, false);
     updateCurrentPairDrawings();
     statusEl.textContent = '「確定」「確定して次へ」「取り消し」を選択してください';
-    showActionPopup(e.latlng);
+    showActionPopup();
   }
 });
 
