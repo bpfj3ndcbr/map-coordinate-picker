@@ -19,10 +19,15 @@ export function initMap(containerId: string): L.Map {
   return map;
 }
 
-// ドラッグ用「+」マーカー
+// ドラッグ用「+」マーカー（SVGによる厳密な座標中心描画に変更）
 export const plusIcon = L.divIcon({
   className: 'plus-marker',
-  html: '+',
+  html: `
+    <svg width="20" height="20" style="position: absolute; top: 0; left: 0; pointer-events: none;">
+      <line x1="10" y1="2" x2="10" y2="18" stroke="#ff0000" stroke-width="3" />
+      <line x1="2" y1="10" x2="18" y2="10" stroke="#ff0000" stroke-width="3" />
+    </svg>
+  `,
   iconSize: [20, 20],
   iconAnchor: [10, 10]
 });
