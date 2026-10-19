@@ -6,7 +6,6 @@ function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      webSecurity: false, // ★ 追加：file:// プロトコルでのスクリプト実行制限を解除
       nodeIntegration: false,
       contextIsolation: true,
     }
