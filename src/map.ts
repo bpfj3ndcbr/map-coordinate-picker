@@ -5,12 +5,23 @@ import { PointCoord } from './types';
 // 地図の初期化（中心：オートポリス）
 export function initMap(containerId: string): L.Map {
   const gsiAttribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>';
-  const paleTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', { attribution: gsiAttribution, maxZoom: 18 });
-  const seamlessPhotoTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { attribution: gsiAttribution, maxZoom: 18 });
+  
+  // maxNativeZoomを18（タイルの限界）、maxZoomを20（拡大の限界）に設定
+  const paleTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', { 
+    attribution: gsiAttribution, 
+    maxNativeZoom: 18, 
+    maxZoom: 20 
+  });
+  const seamlessPhotoTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { 
+    attribution: gsiAttribution, 
+    maxNativeZoom: 18, 
+    maxZoom: 20 
+  });
 
   const map = L.map(containerId, {
     center: [33.036034, 130.982260], // オートポリス
     zoom: 14,
+    maxZoom: 20, // ★マップ全体としてのズーム上限も20に引き上げ
     zoomControl: false,
     layers: [paleTile]
   });
