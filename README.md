@@ -18,6 +18,16 @@ github.io 上で動作確認できます。
 
 Web: <https://bpfj3ndcbr.github.io/map-coordinate-picker/>
 
+
+> [!NOTE]
+> **アクセス解析ツールについて**
+> 
+> <em>ブラウザー版では、サービスの改善や利用状況の把握を目的として、Google によるアクセス解析ツール「Google アナリティクス」を使用しています。
+> 
+> Google アナリティクスはデータの収集のために Cookie を使用しています。このデータは匿名で収集されており、個人を特定するものではありません。
+> 
+> この機能は Cookie を無効にすることで収集を拒否することが出来ますので、お使いのブラウザの設定をご確認ください。Google アナリティクスの利用規約や Google のプライバシーポリシーの詳細については、[Google ポリシーと規約ページ](https://policies.google.com/technologies/partner-sites)をご覧ください。</em>
+
 ---
 
 ## 画面
