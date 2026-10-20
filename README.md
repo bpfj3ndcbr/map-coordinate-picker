@@ -12,6 +12,18 @@
 
 ---
 
+## ブラウザー版
+
+github.io 上で動作確認できます。
+
+Web: <https://bpfj3ndcbr.github.io/map-coordinate-picker/>
+
+---
+
+## 画面
+
+アプリ版のスクリーンショットです。
+
 <img width="1000" height="600" alt="mcp-tool-screenshot" src="https://github.com/user-attachments/assets/69f796e5-ade8-4308-87a8-3e55853b78fb" />
 
 ---
