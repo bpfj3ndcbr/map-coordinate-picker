@@ -12,6 +12,10 @@
 
 ---
 
+<img width="1000" height="600" alt="mcp-tool-screenshot" src="https://github.com/user-attachments/assets/69f796e5-ade8-4308-87a8-3e55853b78fb" />
+
+---
+
 ## 🌟 主な機能
 
 - **地点A・Bの簡単プロット**: 地図上をクリックするだけで、計測ラインの基準となる2地点（A点・B点）を直感的に設定できます
