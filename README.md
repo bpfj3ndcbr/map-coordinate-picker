@@ -20,7 +20,7 @@ Web: <https://bpfj3ndcbr.github.io/map-coordinate-picker/>
 
 
 > [!NOTE]
-> **アクセス解析ツールについて**
+> [**アクセス解析ツールについて**](#about-ga)
 > 
 > <em>ブラウザー版では、サービスの改善や利用状況の把握を目的として、Google によるアクセス解析ツール「Google アナリティクス」を使用しています。
 > 
