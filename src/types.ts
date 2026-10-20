@@ -6,14 +6,13 @@ export interface PointCoord {
 }
 
 export interface ConfirmedPair {
-  id: string;
-  originalIndex: number; // 確定時の固有番号 (1, 2, 3...)
+  originalIndex: number;
   pointA: PointCoord;
   pointB: PointCoord;
-  markerA: L.Marker;
-  markerB: L.Marker;
-  lineAB: L.Polyline;
-  labelMarkerA: L.Marker;
-  labelMarkerB: L.Marker;
-  numberMarker: L.Marker;
+  markerA: L.Marker | null;
+  markerB: L.Marker | null;
+  line: L.Polyline | null;
+  labelA: L.Marker | null;
+  labelB: L.Marker | null;
+  numberMarker: L.Marker | null;
 }

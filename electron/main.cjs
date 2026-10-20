@@ -1,36 +1,51 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const windowStateKeeper = require('electron-window-state');
 
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+  // ウィンドウの状態を管理するオブジェクトを生成（デフォルトサイズを指定）
+  const mainWindowState = windowStateKeeper({
+    defaultWidth: 1100,
+    defaultHeight: 750
+  });
+
+  // windowStateKeeper から前回の x, y, width, height を取得して適用
+  const mainWindow = new BrowserWindow({
+    x: mainWindowState.x,
+    y: mainWindowState.y,
+    width: mainWindowState.width,
+    height: mainWindowState.height,
+    minWidth: 800,
+    minHeight: 600,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
+      nodeIntegration: true,
+      contextIsolation: false
     }
   });
 
-  const isDev = process.argv.includes('--dev');
+  // ウィンドウのサイズ変更や移動イベントを監視して保存
+  mainWindowState.manage(mainWindow);
 
-  if (isDev) {
-    win.loadURL('http://localhost:5173');
+  // Viteの開発サーバーURLがある場合はそちらを、本番ビルド時はローカルファイルを読み込む
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    // app.getAppPath() を使って確実に dist/index.html の絶対パスを指定
-    win.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
   }
 });
