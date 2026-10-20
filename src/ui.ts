@@ -1,12 +1,9 @@
 import { ConfirmedPair } from './types';
 
-// 数字から囲み数字（①, ②...）への変換
-export function getCircledNumber(num: number): string {
-  if (num >= 1 && num <= 20) return String.fromCharCode(0x2460 + num - 1);
-  return `(${num})`;
+export function getDisplayNumber(num: number): string {
+  return String(num);
 }
 
-// クリップボード用テキスト生成
 export function updateClipboardText(textarea: HTMLTextAreaElement, pairs: ConfirmedPair[]): void {
   const format = (val: number) => val.toFixed(6);
   const lines = pairs.map(p => 
@@ -15,7 +12,6 @@ export function updateClipboardText(textarea: HTMLTextAreaElement, pairs: Confir
   textarea.value = lines.join('\n');
 }
 
-// リストUIの安全な描画（innerHTML排除版）
 export function renderPairList(
   container: HTMLDivElement,
   listEl: HTMLDivElement,
@@ -32,46 +28,35 @@ export function renderPairList(
   }
 
   container.style.display = 'block';
-  listEl.textContent = ''; // 既存の要素を安全にクリア
-
-  const format = (val: number) => val.toFixed(6);
+  listEl.textContent = ''; 
 
   pairs.forEach((pair, idx) => {
-    const numStr = getCircledNumber(pair.originalIndex);
+    const numStr = getDisplayNumber(pair.originalIndex);
     
-    // リストアイテム（箱）
     const item = document.createElement('div');
     item.className = 'pair-item';
-    item.style.cursor = 'pointer';
-    const coordInfoA = `A: ${format(pair.pointA.lat)}, ${format(pair.pointA.lng)}`;
-    const coordInfoB = `B: ${format(pair.pointB.lat)}, ${format(pair.pointB.lng)}`;
-    item.title = `地点${numStr} (${coordInfoA} / ${coordInfoB}) - クリックで中央に移動`;
+    item.title = `地点 ${numStr} (クリックで移動)`;
     item.addEventListener('click', () => handlers.onPan(pair));
 
-    // タイトル
     const titleSpan = document.createElement('span');
     titleSpan.className = 'pair-title';
-    titleSpan.textContent = `地点${numStr}`;
+    titleSpan.textContent = `地点 ${numStr}`;
 
-    // アクションボタンコンテナ
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'pair-actions';
 
-    // ▲ボタン
     const btnUp = document.createElement('button');
     btnUp.className = 'btn-up';
     btnUp.textContent = '▲';
     btnUp.disabled = idx === 0;
     btnUp.addEventListener('click', (e) => { e.stopPropagation(); handlers.onMove(idx, -1); });
 
-    // ▼ボタン
     const btnDown = document.createElement('button');
     btnDown.className = 'btn-down';
     btnDown.textContent = '▼';
     btnDown.disabled = idx === pairs.length - 1;
     btnDown.addEventListener('click', (e) => { e.stopPropagation(); handlers.onMove(idx, 1); });
 
-    // 削除ボタン
     const btnDel = document.createElement('button');
     btnDel.className = 'btn-del';
     btnDel.textContent = '削除';

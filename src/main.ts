@@ -1,60 +1,10 @@
 import L from 'leaflet';
 import { PointCoord, ConfirmedPair } from './types';
 import { initMap, plusIcon, getLabelOffsetVector, createCalloutIcon, getSegmentNumberLatLng, createSegmentNumberIcon } from './map';
-import { getCircledNumber, updateClipboardText, renderPairList } from './ui';
+import { getDisplayNumber, updateClipboardText, renderPairList } from './ui';
 
 // ---------------------------------------------------------------------------
-// 動的ポップアップ用のカスタムCSSを注入
-// ---------------------------------------------------------------------------
-const popupStyle = document.createElement('style');
-popupStyle.innerHTML = `
-  .custom-action-popup {
-    position: relative;
-    background: white;
-    border-radius: 8px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
-    width: 140px;
-    height: 126px;
-    box-sizing: border-box;
-    pointer-events: auto;
-  }
-  .custom-action-popup button {
-    flex: 1;
-    cursor: pointer;
-  }
-  .custom-action-popup::after {
-    content: '';
-    position: absolute;
-    width: 0;
-    height: 0;
-    border-style: solid;
-  }
-  /* しっぽの方向バリエーション（12pxの長さ） */
-  .custom-action-popup.tail-left::after {
-    top: 50%; left: -12px; transform: translateY(-50%);
-    border-width: 12px 12px 12px 0; border-color: transparent white transparent transparent;
-  }
-  .custom-action-popup.tail-right::after {
-    top: 50%; right: -12px; transform: translateY(-50%);
-    border-width: 12px 0 12px 12px; border-color: transparent transparent transparent white;
-  }
-  .custom-action-popup.tail-top::after {
-    top: -12px; left: 50%; transform: translateX(-50%);
-    border-width: 0 12px 12px 12px; border-color: transparent transparent white transparent;
-  }
-  .custom-action-popup.tail-bottom::after {
-    bottom: -12px; left: 50%; transform: translateX(-50%);
-    border-width: 12px 12px 0 12px; border-color: white transparent transparent transparent;
-  }
-`;
-document.head.appendChild(popupStyle);
-
-// ---------------------------------------------------------------------------
-// 国内主要サーキットの座標マスターデータ
+// サーキットマスターデータ
 // ---------------------------------------------------------------------------
 const CIRCUITS: Record<string, { name: string; lat: number; lng: number }> = {
   fsw: { name: '富士スピードウェイ', lat: 35.372176, lng: 138.927236 },
@@ -79,6 +29,9 @@ let confirmedPairs: ConfirmedPair[] = [];
 let totalCreatedCount = 0;
 let isSearching = false;
 
+// 移動再編集中の排他制御ロックフラグ
+let isEditing = false; 
+
 let currentPointA: PointCoord | null = null;
 let currentPointB: PointCoord | null = null;
 let currentMarkerA: L.Marker | null = null;
@@ -88,14 +41,16 @@ let currentLabelMarkerA: L.Marker | null = null;
 let currentLabelMarkerB: L.Marker | null = null;
 let actionPopupMarker: L.Marker | null = null;
 
+// 再編集時のバックアップ用
+let originalPointForEdit: PointCoord | null = null;
+let originalPairForEdit: { pointA: PointCoord, pointB: PointCoord } | null = null;
+let originalNumberLatLngForEdit: L.LatLng | null = null;
+
 // ---------------------------------------------------------------------------
-// 初期化・DOM要素取得
+// 初期化・DOM取得
 // ---------------------------------------------------------------------------
 const map = initMap('map');
-
-setTimeout(() => {
-  map.invalidateSize();
-}, 200);
+setTimeout(() => { map.invalidateSize(); }, 200);
 
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const resultInput = document.getElementById('result-input') as HTMLTextAreaElement;
@@ -107,377 +62,805 @@ const zoomSlider = document.getElementById('zoom-slider') as HTMLInputElement;
 const zoomValueEl = document.getElementById('zoom-value') as HTMLSpanElement;
 const zoomInBtn = document.getElementById('zoom-in-btn') as HTMLButtonElement;
 const zoomOutBtn = document.getElementById('zoom-out-btn') as HTMLButtonElement;
-
 const searchInput = document.getElementById('search-input') as HTMLInputElement;
 const searchBtn = document.getElementById('search-btn') as HTMLButtonElement;
-
 const circuitSelect = document.getElementById('circuit-select') as HTMLSelectElement;
-const circuitBtn = document.getElementById('circuit-btn') as HTMLButtonElement;
 
 // ---------------------------------------------------------------------------
-// UI・描画の更新連携
+// 描画・更新処理
 // ---------------------------------------------------------------------------
-function updateCurrentPairDrawings(): void {
-  if (currentPointA && currentPointB) {
-    const latLngs: L.LatLngExpression[] = [ [currentPointA.lat, currentPointA.lng], [currentPointB.lat, currentPointB.lng] ];
-    if (currentLineAB) currentLineAB.setLatLngs(latLngs);
-    else currentLineAB = L.polyline(latLngs, { color: '#ffff00', weight: 3, dashArray: '6, 6' }).addTo(map);
-  } else if (currentLineAB) {
-    map.removeLayer(currentLineAB);
-    currentLineAB = null;
-  }
-
-  if (currentPointA) {
-    const offsetA = getLabelOffsetVector(map, currentPointA, currentPointB, 30);
-    const iconA = createCalloutIcon('A', offsetA);
-    if (currentLabelMarkerA) {
-      currentLabelMarkerA.setLatLng([currentPointA.lat, currentPointA.lng]).setIcon(iconA);
-    } else {
-      currentLabelMarkerA = L.marker([currentPointA.lat, currentPointA.lng], { icon: iconA, interactive: false }).addTo(map);
-    }
-  }
-
-  if (currentPointB) {
-    const offsetB = getLabelOffsetVector(map, currentPointB, currentPointA, 30);
-    const iconB = createCalloutIcon('B', offsetB);
-    if (currentLabelMarkerB) {
-      currentLabelMarkerB.setLatLng([currentPointB.lat, currentPointB.lng]).setIcon(iconB);
-    } else {
-      currentLabelMarkerB = L.marker([currentPointB.lat, currentPointB.lng], { icon: iconB, interactive: false }).addTo(map);
-    }
-  }
-}
-
-function updateConfirmedPairsDrawings(): void {
-  confirmedPairs.forEach((pair) => {
-    const numLatLng = getSegmentNumberLatLng(map, pair.pointA, pair.pointB);
-    pair.numberMarker.setLatLng(numLatLng);
-  });
-}
-
-function updateOutputAndListUI(): void {
+function updateUI(): void {
   updateClipboardText(resultInput, confirmedPairs);
-  
   renderPairList(pairListContainer, pairListEl, confirmedPairs, {
-    onMove: movePair,
-    onDelete: deletePair,
+    onMove: handleMovePair,
+    onDelete: handleDeletePair,
     onPan: (pair) => {
-      const midLat = (pair.pointA.lat + pair.pointB.lat) / 2;
-      const midLng = (pair.pointA.lng + pair.pointB.lng) / 2;
-      map.panTo([midLat, midLng], { animate: true, duration: 0.5 });
+      const bounds = L.latLngBounds(
+        [pair.pointA.lat, pair.pointA.lng],
+        [pair.pointB.lat, pair.pointB.lng]
+      );
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 } as L.FitBoundsOptions);
     }
   });
 }
 
-function movePair(index: number, direction: number): void {
-  const targetIndex = index + direction;
-  if (targetIndex < 0 || targetIndex >= confirmedPairs.length) return;
-
-  const temp = confirmedPairs[index];
-  confirmedPairs[index] = confirmedPairs[targetIndex];
-  confirmedPairs[targetIndex] = temp;
-
-  updateOutputAndListUI();
-  
-  const midLat = (temp.pointA.lat + temp.pointB.lat) / 2;
-  const midLng = (temp.pointA.lng + temp.pointB.lng) / 2;
-  map.panTo([midLat, midLng], { animate: true, duration: 0.5 });
-}
-
-function deletePair(index: number): void {
-  const pair = confirmedPairs[index];
-  map.removeLayer(pair.markerA);
-  map.removeLayer(pair.markerB);
-  map.removeLayer(pair.lineAB);
-  map.removeLayer(pair.labelMarkerA);
-  map.removeLayer(pair.labelMarkerB);
-  map.removeLayer(pair.numberMarker);
-
-  confirmedPairs.splice(index, 1);
-  updateOutputAndListUI();
-
-  if (confirmedPairs.length === 0 && !currentPointA) {
-    statusEl.textContent = '地点 A をクリックしてください';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// カスタムアクションポップアップ生成
-// ---------------------------------------------------------------------------
-function updateActionPopupPosition(): void {
-  if (!actionPopupMarker || !currentPointA || !currentPointB) return;
-
-  const pA = map.latLngToContainerPoint([currentPointA.lat, currentPointA.lng]);
-  const pB = map.latLngToContainerPoint([currentPointB.lat, currentPointB.lng]);
-
-  const vx = pB.x - pA.x;
-  const vy = pB.y - pA.y;
-  const deg = Math.atan2(vy, vx) * (180 / Math.PI);
-
-  const offset = 80; 
-  let tailClass = '';
-  let anchorPoint: [number, number] = [0, 0];
-
-  const uiWidth = 140;
-  const uiHeight = 126;
-
-  if (deg >= -45 && deg < 45) {
-    tailClass = 'tail-left';
-    anchorPoint = [-offset, uiHeight / 2];
-  } else if (deg >= 45 && deg < 135) {
-    tailClass = 'tail-top';
-    anchorPoint = [uiWidth / 2, -offset];
-  } else if (deg >= -135 && deg < -45) {
-    tailClass = 'tail-bottom';
-    anchorPoint = [uiWidth / 2, uiHeight + offset];
-  } else {
-    tailClass = 'tail-right';
-    anchorPoint = [uiWidth + offset, uiHeight / 2];
-  }
-
-  const container = document.createElement('div');
-  container.className = `custom-action-popup ${tailClass}`;
-  
-  // ★追加：ポップアップのコンテナをクリックした際、地図にイベントが伝播しないようにする
-  L.DomEvent.disableClickPropagation(container);
-  
-  const btnConfirm = document.createElement('button');
-  btnConfirm.className = 'action-popup-btn btn-confirm';
-  btnConfirm.textContent = '確定';
-  btnConfirm.onclick = (e: MouseEvent) => {
-    e.stopPropagation(); // ★追加：ボタンクリックイベントの伝播も確実に防止
-    finalizeCurrentPair(false);
-  };
-
-  const btnNext = document.createElement('button');
-  btnNext.className = 'action-popup-btn btn-next';
-  btnNext.textContent = '確定して次へ';
-  btnNext.onclick = (e: MouseEvent) => {
-    e.stopPropagation(); // ★追加
-    finalizeCurrentPair(true);
-  };
-
-  const btnCancel = document.createElement('button');
-  btnCancel.className = 'action-popup-btn btn-cancel';
-  btnCancel.textContent = '取り消し';
-  btnCancel.onclick = (e: MouseEvent) => {
-    e.stopPropagation(); // ★追加
-    cancelCurrentPair();
-  };
-
-  container.appendChild(btnConfirm);
-  container.appendChild(btnNext);
-  container.appendChild(btnCancel);
-
-  const customIcon = L.divIcon({
-    html: container,
-    className: '', // デフォルト背景を消去
-    iconSize: [uiWidth, uiHeight],
-    iconAnchor: anchorPoint
-  });
-
-  actionPopupMarker.setLatLng([currentPointB.lat, currentPointB.lng]);
-  actionPopupMarker.setIcon(customIcon);
-}
-
-function showActionPopup(): void {
-  if (!currentPointA || !currentPointB) return;
-  removeActionPopup();
-
-  actionPopupMarker = L.marker([currentPointB.lat, currentPointB.lng], { interactive: true }).addTo(map);
-  updateActionPopupPosition();
-}
-
-function removeActionPopup(): void {
-  if (actionPopupMarker) {
-    map.removeLayer(actionPopupMarker);
-    actionPopupMarker = null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 確定・キャンセル処理
-// ---------------------------------------------------------------------------
-function finalizeCurrentPair(continueNext: boolean): void {
-  if (!currentPointA || !currentPointB || !currentMarkerA || !currentMarkerB || !currentLineAB || !currentLabelMarkerA || !currentLabelMarkerB) return;
-
-  removeActionPopup();
-  totalCreatedCount += 1;
-  const numStr = getCircledNumber(totalCreatedCount);
-  const numLatLng = getSegmentNumberLatLng(map, currentPointA, currentPointB);
-
-  const numberMarker = L.marker(numLatLng, {
-    icon: createSegmentNumberIcon(numStr),
-    interactive: false
-  }).addTo(map);
-
-  currentMarkerA.dragging?.disable();
-  currentMarkerB.dragging?.disable();
-
-  confirmedPairs.push({
-    id: Date.now().toString(),
-    originalIndex: totalCreatedCount,
-    pointA: { ...currentPointA },
-    pointB: { ...currentPointB },
-    markerA: currentMarkerA,
-    markerB: currentMarkerB,
-    lineAB: currentLineAB,
-    labelMarkerA: currentLabelMarkerA,
-    labelMarkerB: currentLabelMarkerB,
-    numberMarker: numberMarker
-  });
-
-  currentPointA = currentPointB = currentMarkerA = currentMarkerB = currentLineAB = currentLabelMarkerA = currentLabelMarkerB = null;
-  updateOutputAndListUI();
-  
-  statusEl.textContent = continueNext 
-    ? `地点${numStr} を確定しました。次の地点 A をクリックしてください`
-    : `すべての確定が完了しました（全${confirmedPairs.length}件）`;
-}
-
-function cancelCurrentPair(): void {
-  removeActionPopup();
+function clearCurrentDraft(): void {
   if (currentMarkerA) map.removeLayer(currentMarkerA);
   if (currentMarkerB) map.removeLayer(currentMarkerB);
   if (currentLineAB) map.removeLayer(currentLineAB);
   if (currentLabelMarkerA) map.removeLayer(currentLabelMarkerA);
   if (currentLabelMarkerB) map.removeLayer(currentLabelMarkerB);
+  if (actionPopupMarker) map.removeLayer(actionPopupMarker);
 
-  currentPointA = currentPointB = currentMarkerA = currentMarkerB = currentLineAB = currentLabelMarkerA = currentLabelMarkerB = null;
-  statusEl.textContent = '操作を取り消しました。地点 A をクリックしてください';
+  currentPointA = null;
+  currentPointB = null;
+  currentMarkerA = null;
+  currentMarkerB = null;
+  currentLineAB = null;
+  currentLabelMarkerA = null;
+  currentLabelMarkerB = null;
+  actionPopupMarker = null;
+
+  // ※ ここでの statusEl の上書きは削除し confirmCurrentPair 側に委譲
 }
 
-function createDraggableMarker(coord: PointCoord, isPointA: boolean): L.Marker {
-  const m = L.marker([coord.lat, coord.lng], { icon: plusIcon, draggable: true }).addTo(map);
-  m.on('drag', (e: L.LeafletEvent) => {
-    const newPos = (e.target as L.Marker).getLatLng();
-    if (isPointA) {
-      currentPointA = { lat: newPos.lat, lng: newPos.lng };
+function updateDraftLineAndLabels(): void {
+  if (currentPointA && currentMarkerA) {
+    const latlngA = currentMarkerA.getLatLng();
+    currentPointA = { lat: latlngA.lat, lng: latlngA.lng };
+  }
+  if (currentPointB && currentMarkerB) {
+    const latlngB = currentMarkerB.getLatLng();
+    currentPointB = { lat: latlngB.lat, lng: latlngB.lng };
+  }
+
+  if (currentPointA && currentMarkerA) {
+    const offsetA = getLabelOffsetVector(map, currentPointA, currentPointB);
+    const iconA = createCalloutIcon('A', offsetA);
+    if (!currentLabelMarkerA) {
+      currentLabelMarkerA = L.marker([currentPointA.lat, currentPointA.lng], { icon: iconA, interactive: false }).addTo(map);
     } else {
-      currentPointB = { lat: newPos.lat, lng: newPos.lng };
+      currentLabelMarkerA.setLatLng([currentPointA.lat, currentPointA.lng]);
+      currentLabelMarkerA.setIcon(iconA);
+    }
+  }
+
+  if (currentPointB && currentMarkerB) {
+    const offsetB = getLabelOffsetVector(map, currentPointB, currentPointA);
+    const iconB = createCalloutIcon('B', offsetB);
+    if (!currentLabelMarkerB) {
+      currentLabelMarkerB = L.marker([currentPointB.lat, currentPointB.lng], { icon: iconB, interactive: false }).addTo(map);
+    } else {
+      currentLabelMarkerB.setLatLng([currentPointB.lat, currentPointB.lng]);
+      currentLabelMarkerB.setIcon(iconB);
+    }
+  }
+
+  if (currentPointA && currentPointB) {
+    const latlngs: [number, number][] = [
+      [currentPointA.lat, currentPointA.lng],
+      [currentPointB.lat, currentPointB.lng]
+    ];
+    if (!currentLineAB) {
+      currentLineAB = L.polyline(latlngs, { color: '#ffcc00', weight: 2, dashArray: '5, 5' }).addTo(map);
+    } else {
+      currentLineAB.setLatLngs(latlngs);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 確定済みペアのレイヤー更新
+// ---------------------------------------------------------------------------
+function updateConfirmedPairLayers(pair: ConfirmedPair, draggingMarker?: L.Marker): void {
+  if (pair.line) {
+    pair.line.setLatLngs([
+      [pair.pointA.lat, pair.pointA.lng],
+      [pair.pointB.lat, pair.pointB.lng]
+    ]);
+  }
+  if (pair.markerA && pair.markerA !== draggingMarker) pair.markerA.setLatLng([pair.pointA.lat, pair.pointA.lng]);
+  if (pair.markerB && pair.markerB !== draggingMarker) pair.markerB.setLatLng([pair.pointB.lat, pair.pointB.lng]);
+  
+  if (pair.labelA && pair.labelA !== draggingMarker) {
+    const offsetA = getLabelOffsetVector(map, pair.pointA, pair.pointB);
+    pair.labelA.setLatLng([pair.pointA.lat, pair.pointA.lng]);
+    pair.labelA.setIcon(createCalloutIcon('A', offsetA));
+  }
+  
+  if (pair.labelB && pair.labelB !== draggingMarker) {
+    const offsetB = getLabelOffsetVector(map, pair.pointB, pair.pointA);
+    pair.labelB.setLatLng([pair.pointB.lat, pair.pointB.lng]);
+    pair.labelB.setIcon(createCalloutIcon('B', offsetB));
+  }
+  
+  if (pair.numberMarker && pair.numberMarker !== draggingMarker) {
+    const numLatLng = getSegmentNumberLatLng(map, pair.pointA, pair.pointB);
+    pair.numberMarker.setLatLng(numLatLng);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// アクションポップアップ表示ロジック
+// ---------------------------------------------------------------------------
+function showActionPopup(
+  latlng: L.LatLng, 
+  mode: 'create' | 'edit' | 'edit-confirm' | 'edit-line' | 'edit-confirm-line', 
+  pair?: ConfirmedPair, 
+  pointType?: 'A' | 'B'
+): void {
+  if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+
+  const pCurrent = map.latLngToContainerPoint(latlng);
+  const popupWidth = 120;
+  const popupHeight = 110;
+
+  let offsetX = 0;
+  let offsetY = 0;
+
+  // 1. 線分・ペア全体基準の場合 (番号ラベルと完全対称・遠くに押し出す)
+  if (pair && (mode === 'edit-line' || mode === 'edit-confirm-line')) {
+    const pA = map.latLngToContainerPoint([pair.pointA.lat, pair.pointA.lng]);
+    const pB = map.latLngToContainerPoint([pair.pointB.lat, pair.pointB.lng]);
+    const midX = (pA.x + pB.x) / 2;
+    const midY = (pA.y + pB.y) / 2;
+
+    const vx = pB.x - pA.x;
+    const vy = pB.y - pA.y;
+    const len = Math.hypot(vx, vy);
+    
+    let nx = 0;
+    let ny = -1;
+    if (len > 0) {
+      nx = -vy / len; 
+      ny = vx / len;
     }
 
-    if (actionPopupMarker && currentPointA && currentPointB) {
-      updateActionPopupPosition();
+    const reverseNx = -nx;
+    const reverseNy = -ny;
+    const distFromLine = 135;
+
+    const targetCx = midX + reverseNx * distFromLine;
+    const targetCy = midY + reverseNy * distFromLine;
+
+    offsetX = targetCx - pCurrent.x;
+    offsetY = targetCy - pCurrent.y;
+  } 
+  // 2. 点A/点B基準の場合 (ラベルの外側へ押し出す)
+  else {
+    let targetCoord: PointCoord | null = null;
+    const sourceCoord = { lat: latlng.lat, lng: latlng.lng };
+
+    if (mode === 'create' && currentPointA) {
+      targetCoord = currentPointA;
+    } else if ((mode === 'edit' || mode === 'edit-confirm') && pair && pointType) {
+      targetCoord = pointType === 'A' ? pair.pointB : pair.pointA;
     }
 
-    updateCurrentPairDrawings();
+    const labelOffset = getLabelOffsetVector(map, sourceCoord, targetCoord);
+    const lx = labelOffset.dx;
+    const ly = labelOffset.dy;
+
+    const lLen = Math.hypot(lx, ly);
+    let nx = 0;
+    let ny = -1;
+    if (lLen > 0) {
+      nx = lx / lLen;
+      ny = ly / lLen;
+    }
+
+    const distFromLabel = 80;
+    offsetX = lx + nx * distFromLabel;
+    offsetY = ly + ny * distFromLabel;
+
+    let targetX = pCurrent.x + offsetX;
+    let targetY = pCurrent.y + offsetY;
+
+    const mapSize = map.getSize();
+    const sideDist = 80;
+    if (
+      targetX - popupWidth / 2 < 10 ||
+      targetX + popupWidth / 2 > mapSize.x - 10 ||
+      targetY - popupHeight / 2 < 10 ||
+      targetY + popupHeight / 2 > mapSize.y - 10
+    ) {
+      const candidates = [
+        { x: lx - ny * sideDist, y: ly + nx * sideDist },  
+        { x: lx + ny * sideDist, y: ly - nx * sideDist },  
+        { x: lx - nx * distFromLabel, y: ly - ny * distFromLabel }
+      ];
+
+      for (const cand of candidates) {
+        const cx = pCurrent.x + cand.x;
+        const cy = pCurrent.y + cand.y;
+        if (
+          cx - popupWidth / 2 >= 10 &&
+          cx + popupWidth / 2 <= mapSize.x - 10 &&
+          cy - popupHeight / 2 >= 10 &&
+          cy + popupHeight / 2 <= mapSize.y - 10
+        ) {
+          offsetX = cand.x;
+          offsetY = cand.y;
+          break;
+        }
+      }
+    }
+  }
+
+  const anchorX = -(offsetX - popupWidth / 2);
+  const anchorY = -(offsetY - popupHeight / 2);
+
+  const div = document.createElement('div');
+  div.className = 'custom-action-popup';
+
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
+
+  // -------------------------------------------------------------------------
+  // タイトル部（ペア番号をバッジデザインで表示）
+  // -------------------------------------------------------------------------
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'popup-title';
+  titleDiv.style.display = 'flex';
+  titleDiv.style.alignItems = 'center';
+  titleDiv.style.justifyContent = 'center';
+  titleDiv.style.gap = '4px';
+
+  if (pair) {
+    const badge = document.createElement('div');
+    badge.className = 'segment-number-label'; // 地図上と同じクラスを適用してデザインを統一
+    badge.style.position = 'static';
+    badge.style.width = '20px';
+    badge.style.height = '20px';
+    badge.style.fontSize = '10px';
+    badge.style.boxShadow = 'none';
+    badge.innerHTML = `<span>${getDisplayNumber(pair.originalIndex)}</span>`;
+    
+    const textSpan = document.createElement('span');
+    textSpan.textContent = 'を編集中';
+
+    titleDiv.appendChild(badge);
+    titleDiv.appendChild(textSpan);
+  } else {
+    titleDiv.textContent = '新規作成';
+  }
+  div.appendChild(titleDiv);
+
+  // -------------------------------------------------------------------------
+  // 各モードのボタン生成
+  // -------------------------------------------------------------------------
+  if (mode === 'create') {
+    const btnConfirm = document.createElement('button');
+    btnConfirm.textContent = '確定';
+    btnConfirm.style.backgroundColor = '#28a745';
+    btnConfirm.style.color = '#fff';
+    btnConfirm.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      confirmCurrentPair(true); // 続けて次のペアを作成できるように true を渡す
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = '取り消し';
+    btnCancel.style.backgroundColor = '#dc3545';
+    btnCancel.style.color = '#fff';
+    btnCancel.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      clearCurrentDraft();
+      statusEl.textContent = '地点 A をクリックしてください';
+    });
+
+    div.appendChild(btnConfirm);
+    div.appendChild(btnCancel);
+
+  } else if (mode === 'edit' && pair && pointType) {
+    const btnMove = document.createElement('button');
+    btnMove.textContent = `地点 ${pointType} を移動`;
+    btnMove.style.backgroundColor = '#ffc107';
+    btnMove.style.color = '#000';
+    btnMove.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      enablePointMove(pair, pointType);
+    });
+
+    const btnDelete = document.createElement('button');
+    btnDelete.textContent = 'ペア全体を削除';
+    btnDelete.style.backgroundColor = '#dc3545';
+    btnDelete.style.color = '#fff';
+    btnDelete.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      const idx = confirmedPairs.indexOf(pair);
+      if (idx !== -1) handleDeletePair(idx);
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'キャンセル';
+    btnCancel.style.backgroundColor = '#6c757d';
+    btnCancel.style.color = '#fff';
+    btnCancel.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+    });
+
+    div.appendChild(btnMove);
+    div.appendChild(btnDelete);
+    div.appendChild(btnCancel);
+
+  } else if (mode === 'edit-confirm' && pair && pointType) {
+    const btnConfirm = document.createElement('button');
+    btnConfirm.textContent = '変更を確定';
+    btnConfirm.style.backgroundColor = '#28a745';
+    btnConfirm.style.color = '#fff';
+    btnConfirm.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      
+      const tMarker = pointType === 'A' ? pair.markerA : pair.markerB;
+      const tLabel  = pointType === 'A' ? pair.labelA : pair.labelB;
+      tMarker?.dragging?.disable();
+      tMarker?.off('drag dragend');
+      tLabel?.dragging?.disable();
+      tLabel?.off('drag dragend');
+      
+      originalPointForEdit = null;
+      isEditing = false;
+      updateConfirmedPairLayers(pair);
+      updateUI();
+      statusEl.textContent = '変更を確定しました';
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'キャンセル';
+    btnCancel.style.backgroundColor = '#dc3545';
+    btnCancel.style.color = '#fff';
+    btnCancel.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      
+      if (originalPointForEdit) {
+        if (pointType === 'A') pair.pointA = { ...originalPointForEdit };
+        else pair.pointB = { ...originalPointForEdit };
+        updateConfirmedPairLayers(pair);
+      }
+      
+      const tMarker = pointType === 'A' ? pair.markerA : pair.markerB;
+      const tLabel  = pointType === 'A' ? pair.labelA : pair.labelB;
+      tMarker?.dragging?.disable();
+      tMarker?.off('drag dragend');
+      tLabel?.dragging?.disable();
+      tLabel?.off('drag dragend');
+      
+      originalPointForEdit = null;
+      isEditing = false;
+      updateUI();
+      statusEl.textContent = '移動をキャンセルしました';
+    });
+
+    div.appendChild(btnConfirm);
+    div.appendChild(btnCancel);
+
+  } else if (mode === 'edit-line' && pair) {
+    const btnMove = document.createElement('button');
+    btnMove.textContent = `ABペアの移動`;
+    btnMove.style.backgroundColor = '#ffc107';
+    btnMove.style.color = '#000';
+    btnMove.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      enableLineMove(pair);
+    });
+
+    const btnDelete = document.createElement('button');
+    btnDelete.textContent = 'ペア全体を削除';
+    btnDelete.style.backgroundColor = '#dc3545';
+    btnDelete.style.color = '#fff';
+    btnDelete.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      const idx = confirmedPairs.indexOf(pair);
+      if (idx !== -1) handleDeletePair(idx);
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'キャンセル';
+    btnCancel.style.backgroundColor = '#6c757d';
+    btnCancel.style.color = '#fff';
+    btnCancel.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+    });
+
+    div.appendChild(btnMove);
+    div.appendChild(btnDelete);
+    div.appendChild(btnCancel);
+
+  } else if (mode === 'edit-confirm-line' && pair) {
+    const btnConfirm = document.createElement('button');
+    btnConfirm.textContent = '変更を確定';
+    btnConfirm.style.backgroundColor = '#28a745';
+    btnConfirm.style.color = '#fff';
+    btnConfirm.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      
+      pair.numberMarker?.dragging?.disable();
+      pair.numberMarker?.off('drag dragend');
+      
+      originalPairForEdit = null;
+      originalNumberLatLngForEdit = null;
+      isEditing = false;
+      updateConfirmedPairLayers(pair);
+      updateUI();
+      statusEl.textContent = 'ペアの平行移動を確定しました';
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'キャンセル';
+    btnCancel.style.backgroundColor = '#dc3545';
+    btnCancel.style.color = '#fff';
+    btnCancel.addEventListener('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+      
+      if (originalPairForEdit) {
+        pair.pointA = { ...originalPairForEdit.pointA };
+        pair.pointB = { ...originalPairForEdit.pointB };
+        updateConfirmedPairLayers(pair);
+      }
+      
+      pair.numberMarker?.dragging?.disable();
+      pair.numberMarker?.off('drag dragend');
+      
+      originalPairForEdit = null;
+      originalNumberLatLngForEdit = null;
+      isEditing = false;
+      updateUI();
+      statusEl.textContent = '移動をキャンセルしました';
+    });
+
+    div.appendChild(btnConfirm);
+    div.appendChild(btnCancel);
+  }
+
+  const icon = L.divIcon({
+    className: '',
+    html: div,
+    iconSize: [popupWidth, popupHeight],
+    iconAnchor: [anchorX, anchorY]
   });
-  return m;
+
+  actionPopupMarker = L.marker(latlng, { icon, interactive: true, zIndexOffset: 100000 }).addTo(map);
 }
 
 // ---------------------------------------------------------------------------
-// 住所検索 & サーキット選択処理
+// 確定処理・描画
 // ---------------------------------------------------------------------------
-async function searchLocationWithGSI(): Promise<void> {
-  if (isSearching) return;
+function confirmCurrentPair(continueNext: boolean): void {
+  if (!currentPointA || !currentPointB) return;
 
-  const query = searchInput.value.trim();
-  if (!query) {
-    statusEl.textContent = '検索キーワードを入力してください';
-    return;
+  totalCreatedCount++;
+  const pair: ConfirmedPair = {
+    originalIndex: totalCreatedCount,
+    pointA: { ...currentPointA },
+    pointB: { ...currentPointB },
+    line: null,
+    markerA: null,
+    markerB: null,
+    labelA: null,
+    labelB: null,
+    numberMarker: null
+  };
+
+  clearCurrentDraft();
+  confirmedPairs.push(pair);
+  renderConfirmedPair(pair);
+  updateUI();
+
+  if (continueNext) {
+    statusEl.textContent = '地点 A をクリックしてください';
+  } else {
+    statusEl.textContent = `地点 ${getDisplayNumber(pair.originalIndex)} を確定しました`;
   }
+}
 
-  isSearching = true;
-  searchBtn.disabled = true;
-  searchBtn.textContent = '検索中...';
-  statusEl.textContent = '国土地理院データベースを検索中...';
+function renderConfirmedPair(pair: ConfirmedPair): void {
+  const numStr = getDisplayNumber(pair.originalIndex);
 
-  try {
-    const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(query)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`サーバーエラー (HTTP ${response.status})`);
+  pair.line = L.polyline(
+    [[pair.pointA.lat, pair.pointA.lng], [pair.pointB.lat, pair.pointB.lng]],
+    { color: '#ffcc00', weight: 4 }
+  ).addTo(map);
 
-    const data = await response.json();
-    if (data && data.length > 0) {
-      const [lng, lat] = data[0].geometry.coordinates;
-      map.flyTo([lat, lng], 15, { duration: 1.2 });
-      statusEl.textContent = `「${data[0].properties.title || query}」へ移動しました`;
+  pair.line.on('contextmenu', (e: L.LeafletMouseEvent) => {
+    if (isEditing) return;
+    L.DomEvent.stopPropagation(e);
+    showActionPopup(e.latlng, 'edit-line', pair);
+  });
+
+  pair.markerA = L.marker([pair.pointA.lat, pair.pointA.lng], { icon: plusIcon, interactive: true }).addTo(map);
+  pair.markerB = L.marker([pair.pointB.lat, pair.pointB.lng], { icon: plusIcon, interactive: true }).addTo(map);
+
+  pair.markerA.on('contextmenu', (e: L.LeafletMouseEvent) => {
+    if (isEditing) return;
+    L.DomEvent.stopPropagation(e);
+    showActionPopup(e.latlng, 'edit', pair, 'A');
+  });
+
+  pair.markerB.on('contextmenu', (e: L.LeafletMouseEvent) => {
+    if (isEditing) return;
+    L.DomEvent.stopPropagation(e);
+    showActionPopup(e.latlng, 'edit', pair, 'B');
+  });
+
+  const offsetA = getLabelOffsetVector(map, pair.pointA, pair.pointB);
+  pair.labelA = L.marker([pair.pointA.lat, pair.pointA.lng], {
+    icon: createCalloutIcon('A', offsetA),
+    interactive: true
+  }).addTo(map);
+
+  const offsetB = getLabelOffsetVector(map, pair.pointB, pair.pointA);
+  pair.labelB = L.marker([pair.pointB.lat, pair.pointB.lng], {
+    icon: createCalloutIcon('B', offsetB),
+    interactive: true
+  }).addTo(map);
+
+  pair.labelA.on('contextmenu', (e: L.LeafletMouseEvent) => {
+    if (isEditing) return;
+    L.DomEvent.stopPropagation(e);
+    showActionPopup(e.latlng, 'edit', pair, 'A');
+  });
+
+  pair.labelB.on('contextmenu', (e: L.LeafletMouseEvent) => {
+    if (isEditing) return;
+    L.DomEvent.stopPropagation(e);
+    showActionPopup(e.latlng, 'edit', pair, 'B');
+  });
+
+  const numLatLng = getSegmentNumberLatLng(map, pair.pointA, pair.pointB);
+  pair.numberMarker = L.marker(numLatLng, {
+    icon: createSegmentNumberIcon(numStr),
+    interactive: true
+  }).addTo(map);
+
+  pair.numberMarker.on('contextmenu', (e: L.LeafletMouseEvent) => {
+    if (isEditing) return;
+    L.DomEvent.stopPropagation(e);
+    showActionPopup(e.latlng, 'edit-line', pair);
+  });
+}
+
+function removeConfirmedPairLayers(pair: ConfirmedPair): void {
+  if (pair.line) map.removeLayer(pair.line);
+  if (pair.markerA) map.removeLayer(pair.markerA);
+  if (pair.markerB) map.removeLayer(pair.markerB);
+  if (pair.labelA) map.removeLayer(pair.labelA);
+  if (pair.labelB) map.removeLayer(pair.labelB);
+  if (pair.numberMarker) map.removeLayer(pair.numberMarker);
+}
+
+// ---------------------------------------------------------------------------
+// 点の個別移動
+// ---------------------------------------------------------------------------
+function enablePointMove(pair: ConfirmedPair, pointType: 'A' | 'B'): void {
+  const targetMarker = pointType === 'A' ? pair.markerA : pair.markerB;
+  const targetLabel  = pointType === 'A' ? pair.labelA : pair.labelB;
+  if (!targetMarker || !targetLabel) return;
+
+  isEditing = true;
+  originalPointForEdit = pointType === 'A' ? { ...pair.pointA } : { ...pair.pointB };
+
+  targetMarker.dragging?.enable();
+  targetLabel.dragging?.enable();
+  statusEl.textContent = `地点 ${pointType} またはラベルをドラッグして移動してください`;
+
+  targetMarker.off('drag dragend');
+  targetLabel.off('drag dragend');
+
+  showActionPopup(targetMarker.getLatLng(), 'edit-confirm', pair, pointType);
+
+  const onDrag = (e: L.LeafletEvent) => {
+    const latlng = (e.target as L.Marker).getLatLng();
+    if (pointType === 'A') {
+      pair.pointA = { lat: latlng.lat, lng: latlng.lng };
     } else {
-      statusEl.textContent = '該当する住所・施設が見つかりませんでした';
+      pair.pointB = { lat: latlng.lat, lng: latlng.lng };
     }
-  } catch (error) {
-    statusEl.textContent = '検索通信に失敗しました。接続を確認してください';
-  } finally {
-    isSearching = false;
-    searchBtn.disabled = false;
-    searchBtn.textContent = '検索';
-  }
+    updateConfirmedPairLayers(pair, e.target as L.Marker);
+    if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+  };
+
+  const onDragEnd = (e: L.LeafletEvent) => {
+    updateConfirmedPairLayers(pair);
+    showActionPopup((e.target as L.Marker).getLatLng(), 'edit-confirm', pair, pointType);
+  };
+
+  targetMarker.on('drag', onDrag);
+  targetLabel.on('drag', onDrag);
+  targetMarker.on('dragend', onDragEnd);
+  targetLabel.on('dragend', onDragEnd);
 }
 
-searchBtn.addEventListener('click', searchLocationWithGSI);
-searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
-  if (e.key === 'Enter' && !e.isComposing) {
-    e.preventDefault();
-    searchLocationWithGSI();
-  }
-});
+// ---------------------------------------------------------------------------
+// ペアの平行移動（ドラッグ追従）
+// ---------------------------------------------------------------------------
+function enableLineMove(pair: ConfirmedPair): void {
+  const targetMarker = pair.numberMarker;
+  if (!targetMarker) return;
 
-circuitBtn.addEventListener('click', () => {
-  const key = circuitSelect.value;
-  if (!key || !CIRCUITS[key]) {
-    statusEl.textContent = 'サーキットを選択してください';
-    return;
-  }
+  isEditing = true;
+  originalPairForEdit = { pointA: { ...pair.pointA }, pointB: { ...pair.pointB } };
+  originalNumberLatLngForEdit = targetMarker.getLatLng();
 
-  const target = CIRCUITS[key];
-  map.flyTo([target.lat, target.lng], 15, { duration: 1.2 });
-  statusEl.textContent = `「${target.name}」へ移動しました`;
-});
+  targetMarker.dragging?.enable();
+  statusEl.textContent = `番号ラベルをドラッグしてペア全体を平行移動してください`;
+
+  targetMarker.off('drag dragend');
+
+  showActionPopup(targetMarker.getLatLng(), 'edit-confirm-line', pair);
+
+  targetMarker.on('drag', () => {
+    if (!originalNumberLatLngForEdit || !originalPairForEdit) return;
+
+    const currentLatLng = targetMarker.getLatLng();
+    const latDiff = currentLatLng.lat - originalNumberLatLngForEdit.lat;
+    const lngDiff = currentLatLng.lng - originalNumberLatLngForEdit.lng;
+
+    pair.pointA = { 
+      lat: originalPairForEdit.pointA.lat + latDiff, 
+      lng: originalPairForEdit.pointA.lng + lngDiff 
+    };
+    pair.pointB = { 
+      lat: originalPairForEdit.pointB.lat + latDiff, 
+      lng: originalPairForEdit.pointB.lng + lngDiff 
+    };
+    
+    updateConfirmedPairLayers(pair, targetMarker);
+    if (actionPopupMarker) map.removeLayer(actionPopupMarker);
+  });
+
+  targetMarker.on('dragend', () => {
+    updateConfirmedPairLayers(pair);
+    showActionPopup(targetMarker.getLatLng(), 'edit-confirm-line', pair);
+  });
+}
 
 // ---------------------------------------------------------------------------
-// マップクリック・イベントリスナー設定
+// リスト操作
+// ---------------------------------------------------------------------------
+function handleMovePair(index: number, direction: number): void {
+  if (isEditing) return;
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= confirmedPairs.length) return;
+
+  const temp = confirmedPairs[index];
+  confirmedPairs[index] = confirmedPairs[newIndex];
+  confirmedPairs[newIndex] = temp;
+  updateUI();
+}
+
+function handleDeletePair(index: number): void {
+  if (isEditing) {
+    alert('地点の移動モード中です。\nまずは地図上の「変更を確定」または「キャンセル」を選択して完了してください。');
+    return;
+  }
+  const pair = confirmedPairs[index];
+  removeConfirmedPairLayers(pair);
+  confirmedPairs.splice(index, 1);
+  updateUI();
+}
+
+// ---------------------------------------------------------------------------
+// マップクリックイベント
 // ---------------------------------------------------------------------------
 map.on('click', (e: L.LeafletMouseEvent) => {
-  if (currentPointA && currentPointB) return;
-  const { lat, lng } = e.latlng;
+  if (isSearching || isEditing) return;
+
+  const coord: PointCoord = { lat: e.latlng.lat, lng: e.latlng.lng };
 
   if (!currentPointA) {
-    currentPointA = { lat, lng };
-    currentMarkerA = createDraggableMarker(currentPointA, true);
-    updateCurrentPairDrawings();
+    currentPointA = coord;
+    currentMarkerA = L.marker([coord.lat, coord.lng], { icon: plusIcon, draggable: true }).addTo(map);
+
+    currentMarkerA.on('drag', () => {
+      updateDraftLineAndLabels();
+      if (currentPointB && currentMarkerB) showActionPopup(currentMarkerB.getLatLng(), 'create');
+    });
+
+    updateDraftLineAndLabels();
     statusEl.textContent = '地点 B をクリックしてください';
   } else if (!currentPointB) {
-    currentPointB = { lat, lng };
-    currentMarkerB = createDraggableMarker(currentPointB, false);
-    updateCurrentPairDrawings();
-    statusEl.textContent = '「確定」「確定して次へ」「取り消し」を選択してください';
-    showActionPopup();
+    currentPointB = coord;
+    currentMarkerB = L.marker([coord.lat, coord.lng], { icon: plusIcon, draggable: true }).addTo(map);
+
+    currentMarkerB.on('drag', () => {
+      updateDraftLineAndLabels();
+      if (currentMarkerB) showActionPopup(currentMarkerB.getLatLng(), 'create');
+    });
+
+    updateDraftLineAndLabels();
+    showActionPopup(e.latlng, 'create');
+    statusEl.textContent = '確定ボタンを押してください';
   }
 });
 
-map.on('moveend', () => {
-  updateCurrentPairDrawings();
-  updateConfirmedPairsDrawings();
+map.on('zoomend moveend', () => {
+  zoomSlider.value = String(map.getZoom());
+  zoomValueEl.textContent = String(map.getZoom());
+  if (currentPointA && currentPointB) updateDraftLineAndLabels();
 });
 
-zoomSlider.addEventListener('input', () => {
-  const zoomLevel = parseInt(zoomSlider.value, 10);
-  map.setZoom(zoomLevel);
-  zoomValueEl.textContent = `(Lv.${zoomLevel})`;
+// ---------------------------------------------------------------------------
+// UIコントロールイベント
+// ---------------------------------------------------------------------------
+zoomSlider.addEventListener('input', (e) => {
+  const zoom = parseInt((e.target as HTMLInputElement).value, 10);
+  map.setZoom(zoom);
 });
+
 zoomInBtn.addEventListener('click', () => map.zoomIn());
 zoomOutBtn.addEventListener('click', () => map.zoomOut());
-map.on('zoomend', () => {
-  zoomSlider.value = map.getZoom().toString();
-  zoomValueEl.textContent = `(Lv.${map.getZoom()})`;
-});
 
 copyBtn.addEventListener('click', () => {
   if (!resultInput.value) return;
-  navigator.clipboard.writeText(resultInput.value)
-    .then(() => alert('クリップボードにコピーしました！'))
-    .catch(() => alert('コピーに失敗しました'));
+  resultInput.select();
+  navigator.clipboard.writeText(resultInput.value).then(() => {
+    const originalText = copyBtn.textContent;
+    copyBtn.textContent = 'コピー完了!';
+    setTimeout(() => { copyBtn.textContent = originalText; }, 1500);
+  });
 });
 
 resetBtn.addEventListener('click', () => {
-  confirmedPairs.forEach(pair => {
-    map.removeLayer(pair.markerA).removeLayer(pair.markerB).removeLayer(pair.lineAB)
-       .removeLayer(pair.labelMarkerA).removeLayer(pair.labelMarkerB).removeLayer(pair.numberMarker);
-  });
-  confirmedPairs = [];
-  totalCreatedCount = 0;
-  cancelCurrentPair();
-  updateOutputAndListUI();
-  statusEl.textContent = '地点 A をクリックしてください';
+  if (isEditing) {
+    alert('地点の移動モード中はリセットできません。\nまずは「キャンセル」等で完了してください。');
+    return;
+  }
+  if (confirmedPairs.length === 0 && !currentPointA) return;
+  if (confirm('すべての登録内容をリセットしますか？')) {
+    clearCurrentDraft();
+    confirmedPairs.forEach(removeConfirmedPairLayers);
+    confirmedPairs = [];
+    totalCreatedCount = 0;
+    updateUI();
+  }
+});
+
+async function handleSearch(): Promise<void> {
+  const query = searchInput.value.trim();
+  if (!query) return;
+
+  isSearching = true;
+  statusEl.textContent = '検索中...';
+
+  try {
+    const res = await fetch(`https://msearch.gsi.go.jp/address-search-api/msearch?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+
+    if (data && data.length > 0) {
+      const [lng, lat] = data[0].geometry.coordinates;
+      map.setView([lat, lng], 15);
+      statusEl.textContent = `「${data[0].properties.title}」へ移動しました`;
+    } else {
+      statusEl.textContent = '該当する場所が見つかりませんでした';
+    }
+  } catch {
+    statusEl.textContent = '検索処理でエラーが発生しました';
+  } finally {
+    isSearching = false;
+  }
+}
+
+searchBtn.addEventListener('click', handleSearch);
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) handleSearch();
+});
+
+circuitSelect.addEventListener('change', (e) => {
+  const key = (e.target as HTMLSelectElement).value;
+  if (!key || !CIRCUITS[key]) return;
+  const circuit = CIRCUITS[key];
+  map.setView([circuit.lat, circuit.lng], 15);
+  statusEl.textContent = `「${circuit.name}」へ移動しました`;
+  circuitSelect.value = '';
 });

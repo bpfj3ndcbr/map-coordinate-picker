@@ -1,12 +1,11 @@
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css'; // Leaflet用CSSのバンドルインポート
+import 'leaflet/dist/leaflet.css';
 import { PointCoord } from './types';
 
-// 地図の初期化（中心：オートポリス）
+// 地図の初期化
 export function initMap(containerId: string): L.Map {
   const gsiAttribution = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>';
   
-  // maxNativeZoomを18（タイルの限界）、maxZoomを20（拡大の限界）に設定
   const paleTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', { 
     attribution: gsiAttribution, 
     maxNativeZoom: 18, 
@@ -19,9 +18,9 @@ export function initMap(containerId: string): L.Map {
   });
 
   const map = L.map(containerId, {
-    center: [33.036034, 130.982260], // オートポリス
+    center: [33.036034, 130.982260],
     zoom: 14,
-    maxZoom: 20, // ★マップ全体としてのズーム上限も20に引き上げ
+    maxZoom: 20,
     zoomControl: false,
     layers: [paleTile]
   });
@@ -30,22 +29,22 @@ export function initMap(containerId: string): L.Map {
   return map;
 }
 
-// ドラッグ用「+」マーカー（SVGによる厳密な座標中心描画に変更）
+// ドラッグ用「+」マーカー（小サイズ: 14px × 14px）
 export const plusIcon = L.divIcon({
   className: 'plus-marker',
   html: `
-    <svg width="20" height="20" style="position: absolute; top: 0; left: 0; pointer-events: none;">
-      <line x1="10" y1="2" x2="10" y2="18" stroke="#ff0000" stroke-width="3" />
-      <line x1="2" y1="10" x2="18" y2="10" stroke="#ff0000" stroke-width="3" />
+    <svg width="14" height="14" style="position: absolute; top: 0; left: 0; pointer-events: none;">
+      <line x1="7" y1="1" x2="7" y2="13" stroke="#ff0000" stroke-width="2.5" />
+      <line x1="1" y1="7" x2="13" y2="7" stroke="#ff0000" stroke-width="2.5" />
     </svg>
   `,
-  iconSize: [20, 20],
-  iconAnchor: [10, 10]
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
 });
 
 // 引き出し線のベクトル計算
 export function getLabelOffsetVector(map: L.Map, source: PointCoord, target: PointCoord | null, angleDeg: number = 30): { dx: number; dy: number } {
-  const distance = 45;
+  const distance = 40;
   if (!target) {
     const rad = (angleDeg * Math.PI) / 180;
     return { dx: distance * Math.cos(rad), dy: -distance * Math.sin(rad) };
@@ -73,18 +72,19 @@ export function getLabelOffsetVector(map: L.Map, source: PointCoord, target: Poi
 export function createCalloutIcon(labelText: string, offset: { dx: number; dy: number }): L.DivIcon {
   const dx = offset.dx;
   const dy = offset.dy;
-  const width = Math.max(140, Math.abs(dx) * 2 + 50);
-  const height = Math.max(140, Math.abs(dy) * 2 + 50);
+  const width = Math.max(120, Math.abs(dx) * 2 + 40);
+  const height = Math.max(120, Math.abs(dy) * 2 + 40);
   const cx = width / 2;
   const cy = height / 2;
   const targetX = cx + dx;
   const targetY = cy + dy;
 
+  // 丸(A)(B)自体をクリック・ドラッグ可能にするため pointer-events: auto を付与
   const svg = `
     <svg width="${width}" height="${height}" style="position: absolute; left: ${-cx}px; top: ${-cy}px; pointer-events: none;">
       <line x1="${cx}" y1="${cy}" x2="${targetX}" y2="${targetY}" stroke="#ff0000" stroke-width="2" stroke-dasharray="3,3" />
-      <circle cx="${targetX}" cy="${targetY}" r="12" fill="#ff0000" />
-      <text x="${targetX}" y="${targetY + 4}" fill="#ffffff" font-size="12" font-weight="bold" text-anchor="middle">${labelText}</text>
+      <circle cx="${targetX}" cy="${targetY}" r="10" fill="#ff0000" style="pointer-events: auto;" />
+      <text x="${targetX}" y="${targetY + 3.5}" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle" font-family="Arial, sans-serif" style="pointer-events: auto;">${labelText}</text>
     </svg>
   `;
 
@@ -104,10 +104,10 @@ export function getSegmentNumberLatLng(map: L.Map, pointA: PointCoord, pointB: P
   const len = Math.hypot(vx, vy);
 
   let offsetX = 0;
-  let offsetY = -35;
+  let offsetY = -28;
 
   if (len > 0) {
-    const distance = 35;
+    const distance = 28;
     offsetX = (-vy / len) * distance;
     offsetY = (vx / len) * distance;
   }
@@ -115,12 +115,12 @@ export function getSegmentNumberLatLng(map: L.Map, pointA: PointCoord, pointB: P
   return map.containerPointToLatLng(L.point(midX + offsetX, midY + offsetY));
 }
 
-// 囲み数字のアイコン生成
+// 番号アイコン生成
 export function createSegmentNumberIcon(numStr: string): L.DivIcon {
   return L.divIcon({
     className: 'segment-number-label',
     html: `<span>${numStr}</span>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14]
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
   });
 }
