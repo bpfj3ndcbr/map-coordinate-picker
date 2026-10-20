@@ -2,14 +2,20 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-CW5PB6TH9H"></script>
+  <!-- Google tag (gtag.js) - GitHub Pages のみで実行 -->
   <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
+    if (window.location.hostname === 'bpfj3ndcbr.github.io') {
+      var script = document.createElement('script');
+      script.async = true;
+      script.src = 'https://www.googletagmanager.com/gtag/js?id=G-CW5PB6TH9H';
+      document.head.appendChild(script);
 
-    gtag('config', 'G-CW5PB6TH9H');
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-CW5PB6TH9H');
+    }
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Map Coordinate Picker v1.0.0</title>
