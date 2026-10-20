@@ -1,0 +1,19 @@
+# ビルド出力フォルダ・生成物
+dist/
+release/
+*.app
+*.dmg
+*.exe
+*.zip
+
+# Node 依存関係
+node_modules/
+
+# OS固有の不可視ファイル
+.DS_Store
+Thumbs.db
+
+# 開発用ログファイル
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map Coordinate Picker v1.0.0</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      font-size: 11px;
+    }
+    #map {
+      height: 100vh;
+      width: 100vw;
+    }
+
+    #ui-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 8px 12px;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 320px;
+      max-height: 90vh;
+      overflow-y: auto;
+      opacity: 0.75;
+      transition: opacity 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    #ui-panel:hover {
+      opacity: 1.0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+    }
+
+    .status {
+      font-size: 11px;
+      color: #555;
+      font-weight: bold;
+    }
+    textarea {
+      width: 100%;
+      height: 55px;
+      padding: 4px;
+      box-sizing: border-box;
+      font-size: 11px;
+      font-family: monospace;
+      resize: vertical;
+    }
+    .search-container {
+      display: flex;
+      gap: 4px;
+    }
+    .search-container input[type="text"],
+    .search-container select {
+      flex: 1;
+      padding: 4px 6px;
+      font-size: 11px;
+      min-width: 0;
+    }
+    .search-container button {
+      flex: initial;
+      padding: 4px 8px;
+      white-space: nowrap;
+      font-size: 11px;
+    }
+    .zoom-container {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: #333;
+      padding-top: 4px;
+      border-top: 1px solid #eee;
+    }
+    .zoom-container input[type="range"] {
+      flex: 1;
+      cursor: pointer;
+    }
+    .zoom-btn {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: bold;
+      border-radius: 3px;
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      cursor: pointer;
+      flex: none;
+    }
+    .zoom-btn:hover {
+      background-color: #545b62;
+    }
+    .button-group {
+      display: flex;
+      gap: 6px;
+    }
+    button {
+      flex: 1;
+      padding: 4px 8px;
+      cursor: pointer;
+      border: none;
+      border-radius: 3px;
+      background-color: #007bff;
+      color: white;
+      font-weight: bold;
+      font-size: 11px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    button.reset {
+      background-color: #6c757d;
+    }
+    button.reset:hover {
+      background-color: #545b62;
+    }
+
+    /* 確定済みリストコンテナの幅をパネルの半分程度（180px）に制限 */
+    #pair-list-container {
+      width: 180px;
+    }
+
+    #pair-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 4px;
+      background: #fafafa;
+    }
+    .pair-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #fff;
+      padding: 3px 6px;
+      border: 1px solid #eee;
+      border-radius: 3px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    .pair-item:hover {
+      background-color: #e8f4f8;
+      border-color: #b3d7e8;
+    }
+    .pair-item .pair-title {
+      font-weight: bold;
+      color: #1d3557;
+      white-space: nowrap;
+    }
+    .pair-item .pair-actions {
+      display: flex;
+      gap: 2px;
+    }
+    /* ボタン文字が縦割れしないように nowrap 指定 */
+    .pair-item button {
+      padding: 2px 4px;
+      font-size: 10px;
+      background-color: #e9ecef;
+      color: #333;
+      border: 1px solid #ccc;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .pair-item button:hover {
+      background-color: #ced4da;
+    }
+    .pair-item button.btn-del {
+      background-color: #ff4d4f;
+      color: white;
+      border: none;
+    }
+    .pair-item button.btn-del:hover {
+      background-color: #d9363e;
+    }
+
+    .plus-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      user-select: none;
+      cursor: move;
+    }
+
+    .callout-label {
+      overflow: visible !important;
+      pointer-events: none;
+    }
+
+    .segment-number-label {
+      background: #1d3557;
+      color: #ffffff;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      box-sizing: border-box;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      font-weight: bold;
+      line-height: 1;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    .segment-number-label span {
+      display: block;
+    }
+
+    .custom-action-popup {
+      position: relative;
+      background: white;
+      border-radius: 6px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      width: 120px;
+      box-sizing: border-box;
+      pointer-events: auto;
+      z-index: 10000;
+    }
+    .custom-action-popup .popup-title {
+      font-size: 11px;
+      font-weight: bold;
+      text-align: center;
+      color: #1d3557;
+      padding-bottom: 3px;
+      margin-bottom: 2px;
+      border-bottom: 1px solid #e9ecef;
+      white-space: nowrap;
+    }
+    .custom-action-popup button {
+      padding: 4px;
+      font-size: 11px;
+      border-radius: 3px;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .custom-action-popup::after {
+      content: '';
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-style: solid;
+    }
+    .custom-action-popup.tail-top::after {
+      top: -8px; left: 50%; transform: translateX(-50%);
+      border-width: 0 6px 8px 6px; border-color: transparent transparent white transparent;
+    }
+    .custom-action-popup.tail-bottom::after {
+      bottom: -8px; left: 50%; transform: translateX(-50%);
+      border-width: 8px 6px 0 6px; border-color: white transparent transparent transparent;
+    }
+    .custom-action-popup.tail-left::after {
+      top: 50%; left: -8px; transform: translateY(-50%);
+      border-width: 6px 8px 6px 0; border-color: transparent white transparent transparent;
+    }
+    .custom-action-popup.tail-right::after {
+      top: 50%; right: -8px; transform: translateY(-50%);
+      border-width: 6px 0 6px 8px; border-color: transparent transparent transparent white;
+    }
+  </style>
+  <script type="module" src="./assets/index-C9whLfDY.js"></script>
+  <link rel="stylesheet" href="./assets/index-CIGW-MKW.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="ui-panel">
+    <div id="status" class="status">地点 A をクリックしてください</div>
+
+    <div class="search-container">
+      <input type="text" id="search-input" placeholder="住所で検索(施設の住所はgoogleなどで検索)">
+      <button id="search-btn">検索</button>
+    </div>
+
+    <div class="search-container">
+      <select id="circuit-select">
+        <option value="">主要サーキットへジャンプ...</option>
+        <option value="fsw">富士スピードウェイ</option>
+        <option value="suzuka">鈴鹿サーキット</option>
+        <option value="tc2000">筑波サーキット コース2000</option>
+        <option value="tc1000">筑波サーキット コース1000</option>
+        <option value="nikko">日光サーキット</option>
+        <option value="motegi">モビリティリゾートもてぎ</option>
+        <option value="sugo">スポーツランドSUGO</option>
+        <option value="autopolis">オートポリス</option>
+        <option value="okayama">岡山国際サーキット</option>
+        <option value="sodegaura">袖ヶ浦フォレストレースウェイ</option>
+        <option value="honjo">本庄サーキット</option>
+        <option value="ebisu_east">エビスサーキット 東コース</option>
+        <option value="meihan">名阪スポーツランド</option>
+      </select>
+    </div>
+
+    <div id="pair-list-container" style="display: none;">
+      <div style="font-weight: bold; font-size: 11px; margin-bottom: 2px; color: #333;">確定済みリスト:</div>
+      <div id="pair-list"></div>
+    </div>
+
+    <textarea id="result-input" readonly placeholder="確定された座標がここに表示されます..."></textarea>
+
+    <div class="button-group">
+      <button id="copy-btn">テキストコピー</button>
+      <button id="reset-btn" class="reset">すべてリセット</button>
+    </div>
+
+    <div class="zoom-container">
+      <span>ズーム:</span>
+      <button id="zoom-out-btn" class="zoom-btn">-</button>
+      <input type="range" id="zoom-slider" min="1" max="20" value="14">
+      <button id="zoom-in-btn" class="zoom-btn">+</button>
+      <span id="zoom-value" style="min-width: 20px; text-align: right;">14</span>
+    </div>
+  </div>
+
+</body>
+</html>
