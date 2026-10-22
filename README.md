@@ -1,4 +1,4 @@
-# Map Coordinate Picker (v1.0.0)
+# Map Coordinate Picker (v1.0.1)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-lightgrey.svg)]()
