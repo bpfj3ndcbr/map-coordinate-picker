@@ -1,10 +1,10 @@
-import { ConfirmedPair } from './types';
+import { PairData } from './types';
 
 export function getDisplayNumber(num: number): string {
   return String(num);
 }
 
-export function updateClipboardText(textarea: HTMLTextAreaElement, pairs: ConfirmedPair[]): void {
+export function updateClipboardText(textarea: HTMLTextAreaElement, pairs: PairData[]): void {
   const format = (val: number) => val.toFixed(6);
   const lines = pairs.map(p => 
     `${format(p.pointA.lat)},${format(p.pointA.lng)},${format(p.pointB.lat)},${format(p.pointB.lng)},1`
@@ -15,11 +15,11 @@ export function updateClipboardText(textarea: HTMLTextAreaElement, pairs: Confir
 export function renderPairList(
   container: HTMLDivElement,
   listEl: HTMLDivElement,
-  pairs: ConfirmedPair[],
+  pairs: PairData[],
   handlers: {
     onMove: (idx: number, dir: number) => void;
-    onDelete: (idx: number) => void;
-    onPan: (pair: ConfirmedPair) => void;
+    onDelete: (id: string) => void; // indexではなく一意なidで削除を指示
+    onPan: (pair: PairData) => void;
   }
 ): void {
   if (pairs.length === 0) {
@@ -60,7 +60,7 @@ export function renderPairList(
     const btnDel = document.createElement('button');
     btnDel.className = 'btn-del';
     btnDel.textContent = '削除';
-    btnDel.addEventListener('click', (e) => { e.stopPropagation(); handlers.onDelete(idx); });
+    btnDel.addEventListener('click', (e) => { e.stopPropagation(); handlers.onDelete(pair.id); });
 
     actionsDiv.appendChild(btnUp);
     actionsDiv.appendChild(btnDown);
